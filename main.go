@@ -4,7 +4,9 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/ohsaean/oceansf/grace"
+	log "github.com/sirupsen/logrus"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -69,6 +71,18 @@ func (s *Stats) stat(c echo.Context) error {
 	return c.JSON(http.StatusOK, s)
 }
 
+func init() {
+	// Log as JSON instead of the default ASCII formatter.
+	log.SetFormatter(&log.JSONFormatter{})
+
+	// Output to stdout instead of the default stderr
+	// Can be any io.Writer, see below for File example
+	log.SetOutput(os.Stdout)
+
+	// Only log the warning severity or above.
+	log.SetLevel(log.WarnLevel)
+}
+
 func main() {
 	// Setup
 	e := echo.New()
@@ -87,5 +101,5 @@ func main() {
 	e.Server.Addr = ":8080"
 
 	// Serve it like a boss
-	e.Logger.Fatal(grace.Serve(e.Server))
+	log.Fatal(grace.Serve(e.Server))
 }
