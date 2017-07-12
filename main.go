@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
+	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/ohsaean/oceansf/grace"
 	log "github.com/sirupsen/logrus"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,9 +16,17 @@ import (
 )
 
 type (
+	JsonMap map[string]interface{}
+
 	user struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
+	}
+
+	Session struct {
+		ID         int    `json:"id"`
+		Name       string `json:"name"`
+		SessionKey string `json:"session_key"`
 	}
 
 	Stats struct {
@@ -54,17 +65,37 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func gateway(c echo.Context) error {
-	u := &user{
-		ID: seq,
-	}
-	if err := c.Bind(u); err != nil {
+
+	var rawJson map[string]interface{}
+	rawBody, err := ioutil.ReadAll(c.Request().Body)
+	if err != nil {
+		log.Error(err)
 		return err
 	}
-	users[u.ID] = u
-	seq++
-	return c.JSON(http.StatusOK, u)
+
+	err = json.Unmarshal(rawBody, &rawJson)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	var api string
+	api = rawJson["api"].(string)
+	handler, ok := msgHandler[api]
+
+	if ok {
+		ret := handler(rawJson)
+		return c.JSON(http.StatusOK, ret)
+	} else {
+		return c.String(http.StatusInternalServerError, "api_parse_error")
+	}
 }
 
+func CheckError(err error) {
+	if err != nil {
+		log.Error(err)
+	}
+}
 func (s *Stats) stat(c echo.Context) error {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -80,7 +111,29 @@ func init() {
 	log.SetOutput(os.Stdout)
 
 	// Only log the warning severity or above.
-	log.SetLevel(log.WarnLevel)
+	log.SetLevel(log.DebugLevel)
+
+	hook, err := logrus_fluent.New("localhost", 24224)
+	if err != nil {
+		panic(err)
+	}
+
+	// set custom fire level
+	//hook.SetLevels([]log.Level{
+	//	log.PanicLevel,
+	//	log.ErrorLevel,
+	//})
+
+	// set static tag
+	hook.SetTag("log.server")
+
+	// ignore field
+	hook.AddIgnore("context")
+
+	// filter func
+	hook.AddFilter("error", logrus_fluent.FilterError)
+
+	log.AddHook(hook)
 }
 
 func main() {
@@ -89,10 +142,11 @@ func main() {
 	s := NewStats()
 
 	// Middleware
-	e.Use(middleware.Logger())
+	e.Use(middleware.Logger()) // like Nginx access log
 	e.Use(middleware.Recover())
 	e.Use(s.Process)
 
+	// Router
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello :D")
 	})
