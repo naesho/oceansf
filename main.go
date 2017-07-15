@@ -6,6 +6,7 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/ohsaean/oceansf/grace"
+	"github.com/ohsaean/oceansf/handler"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 )
 
 type (
-	JsonMap map[string]interface{}
 
 	user struct {
 		ID   int    `json:"id"`
@@ -81,13 +81,13 @@ func gateway(c echo.Context) error {
 
 	var api string
 	api = rawJson["api"].(string)
-	handler, ok := msgHandler[api]
+	handlerFunc, ok := handler.MsgHandler[api]
 
 	if ok {
-		ret := handler(rawJson)
+		ret := handlerFunc(rawJson)
 		return c.JSON(http.StatusOK, ret)
 	} else {
-		return c.String(http.StatusInternalServerError, "api_parse_error")
+		return c.String(http.StatusNotFound, "api_parse_error")
 	}
 }
 
@@ -114,9 +114,7 @@ func init() {
 	log.SetLevel(log.DebugLevel)
 
 	hook, err := logrus_fluent.New("localhost", 24224)
-	if err != nil {
-		panic(err)
-	}
+	CheckError(err)
 
 	// set custom fire level
 	//hook.SetLevels([]log.Level{
