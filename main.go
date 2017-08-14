@@ -17,12 +17,6 @@ import (
 )
 
 type (
-
-	user struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-
 	Session struct {
 		ID         int    `json:"id"`
 		Name       string `json:"name"`
@@ -35,11 +29,6 @@ type (
 		Statuses     map[string]int `json:"statuses"`
 		mutex        sync.RWMutex
 	}
-)
-
-var (
-	users = map[int]*user{}
-	seq   = 1
 )
 
 func NewStats() *Stats {
