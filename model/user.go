@@ -1,8 +1,8 @@
 package model
 
 import (
-	"github.com/ohsaean/oceansf/config"
-	"github.com/ohsaean/oceansf/db"
+	"database/sql"
+	"github.com/ohsaean/oceansf/define"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -27,19 +27,18 @@ func NewUser(UID int64) *User {
 	}
 }
 
-func Load(uid int64) *User {
+func Load(db *sql.DB, uid int64) *define.JsonMap {
 
 	// memcached (cache data)
 
 	// when cache fail -> read db
 	user := NewUser(uid)
 	// cache fail -> select user data from table
-	DB := db.GetInstance(config.DB_DEV, false)
-	query := "SELECT SQL_NOCACHE * FROM user WHERE uid = ?"
+	query := "SELECT SQL_NOCACHE * FROM USER WHERE user_id = ?"
 
-	DB.Prepare(query)
+	db.Prepare(query)
 
-	stmt, err := DB.Prepare(query)
+	stmt, err := db.Prepare(query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,7 +55,13 @@ func Load(uid int64) *User {
 		}
 	}
 	log.Info("load user data")
-	return user
+
+	ret := &define.JsonMap{
+		"user":    user,
+		"retcode": 100,
+	}
+
+	return ret
 }
 
 func (u *User) Save() {

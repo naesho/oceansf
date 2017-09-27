@@ -43,3 +43,8 @@ crashlytics-build.properties
 fabric.properties
 
 *.exe
+projectFilesBackup/
+
+# DB Account, Password..
+config/config.toml
+oceansf

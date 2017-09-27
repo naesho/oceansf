@@ -1,12 +1,16 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"github.com/BurntSushi/toml"
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"github.com/ohsaean/oceansf/db"
+	"github.com/ohsaean/oceansf/define"
 	"github.com/ohsaean/oceansf/grace"
-	"github.com/ohsaean/oceansf/handler"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
@@ -17,6 +21,12 @@ import (
 )
 
 type (
+	Context struct {
+		echo.Context
+		db  *sql.DB
+		req define.JsonMap
+	}
+
 	Session struct {
 		ID         int    `json:"id"`
 		Name       string `json:"name"`
@@ -55,7 +65,9 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 
 func gateway(c echo.Context) error {
 
-	var rawJson map[string]interface{}
+	ctx := c.(*Context)
+
+	var rawJson define.JsonMap
 	rawBody, err := ioutil.ReadAll(c.Request().Body)
 	if err != nil {
 		log.Error(err)
@@ -70,13 +82,14 @@ func gateway(c echo.Context) error {
 
 	var api string
 	api = rawJson["api"].(string)
-	handlerFunc, ok := handler.MsgHandler[api]
+	handlerFunc, ok := MsgHandler[api]
+	ctx.req = rawJson
 
 	if ok {
-		ret := handlerFunc(rawJson)
+		ret := handlerFunc(c)
 		return c.JSON(http.StatusOK, ret)
 	} else {
-		return c.String(http.StatusNotFound, "api_parse_error")
+		return c.String(http.StatusNotFound, "api_parsing_error")
 	}
 }
 
@@ -102,6 +115,7 @@ func init() {
 	// Only log the warning severity or above.
 	log.SetLevel(log.DebugLevel)
 
+	// TODO fluent instance 만들기
 	hook, err := logrus_fluent.New("localhost", 24224)
 	CheckError(err)
 
@@ -124,18 +138,39 @@ func init() {
 }
 
 func main() {
+	data, err := ioutil.ReadFile("./config/config.toml")
+	CheckError(err)
+	fmt.Print(string(data))
+
+	var dbInfo db.Info
+	if _, err := toml.Decode(string(data), &dbInfo); err != nil {
+		// handle error
+	}
+
+	log.Debug(dbInfo)
+	dbConn := db.NewDB(&dbInfo)
+
 	// Setup
 	e := echo.New()
 	s := NewStats()
 
 	// Middleware
-	e.Use(middleware.Logger()) // like Nginx access log
+
+	// Create a middleware to extend default context
+	e.Use(func(h echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := &Context{c, dbConn, nil}
+			return h(ctx)
+		}
+	})
+	e.Use(middleware.Logger()) // like nginx access log
 	e.Use(middleware.Recover())
 	e.Use(s.Process)
 
 	// Router
 	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello :D")
+		cc := c.(*Context)
+		return cc.String(http.StatusOK, "Hello :D")
 	})
 	e.GET("/stat", s.stat)
 	e.POST("/gateway", gateway)
