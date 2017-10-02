@@ -3,6 +3,7 @@ package model
 import (
 	"database/sql"
 	"github.com/ohsaean/oceansf/define"
+	"github.com/ohsaean/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -34,9 +35,7 @@ func Load(db *sql.DB, uid int64) *define.JsonMap {
 	// when cache fail -> read db
 	user := NewUser(uid)
 	// cache fail -> select user data from table
-	query := "SELECT SQL_NOCACHE * FROM USER WHERE user_id = ?"
-
-	db.Prepare(query)
+	query := "SELECT SQL_NO_CACHE * FROM USER WHERE user_id = ?"
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -44,15 +43,11 @@ func Load(db *sql.DB, uid int64) *define.JsonMap {
 	}
 	defer stmt.Close() // danger!
 	rows, err := stmt.Query(uid)
-	if err != nil {
-		log.Fatal(err)
-	}
+	lib.CheckError(err)
 
 	for rows.Next() {
 		err = rows.Scan(&user.UID, &user.Name, &user.Email, &user.RegisterDate, &user.LastLoginDate)
-		if err != nil {
-			log.Fatal(err)
-		}
+		lib.CheckError(err)
 	}
 	log.Info("load user data")
 

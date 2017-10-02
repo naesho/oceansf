@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"time"
 )
@@ -42,4 +43,10 @@ type TimerInfo struct {
 	CallBack func()
 	Delay    time.Duration
 	Info     map[string]interface{}
+}
+
+func CheckError(err error) {
+	if err != nil {
+		log.Error(err)
+	}
 }

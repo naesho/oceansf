@@ -2,7 +2,8 @@ package db
 
 import (
 	"database/sql"
-	"github.com/ohsaean/gogpd/lib"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/ohsaean/oceansf/lib"
 )
 
 type Info struct {

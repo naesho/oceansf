@@ -6,3 +6,7 @@ port = 3306
 user = "user"
 pass = "password"
 dbname = "database name"
+
+[fluent]
+ip = "localhost"
+port = 24224

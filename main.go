@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
@@ -11,6 +10,7 @@ import (
 	"github.com/ohsaean/oceansf/db"
 	"github.com/ohsaean/oceansf/define"
 	"github.com/ohsaean/oceansf/grace"
+	"github.com/ohsaean/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
@@ -21,6 +21,16 @@ import (
 )
 
 type (
+	tomlConfig struct {
+		DB     db.Info    `toml:"database"`
+		Fluent FluentInfo `toml:"fluent"`
+	}
+
+	FluentInfo struct {
+		Ip   string
+		Port int
+	}
+
 	Context struct {
 		echo.Context
 		db  *sql.DB
@@ -93,11 +103,6 @@ func gateway(c echo.Context) error {
 	}
 }
 
-func CheckError(err error) {
-	if err != nil {
-		log.Error(err)
-	}
-}
 func (s *Stats) stat(c echo.Context) error {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -105,6 +110,24 @@ func (s *Stats) stat(c echo.Context) error {
 }
 
 func init() {
+
+}
+
+func main() {
+	data, err := ioutil.ReadFile("./config/config.toml")
+	lib.CheckError(err)
+
+	var config tomlConfig
+
+	_, err = toml.Decode(string(data), &config)
+	lib.CheckError(err)
+
+	log.Debug(&define.JsonMap{
+		"msg":  "config.tml result",
+		"data": config.DB,
+	})
+	dbConn := db.NewDB(&config.DB)
+
 	// Log as JSON instead of the default ASCII formatter.
 	log.SetFormatter(&log.JSONFormatter{})
 
@@ -115,9 +138,8 @@ func init() {
 	// Only log the warning severity or above.
 	log.SetLevel(log.DebugLevel)
 
-	// TODO fluent instance 만들기
-	hook, err := logrus_fluent.New("localhost", 24224)
-	CheckError(err)
+	hook, err := logrus_fluent.New(config.Fluent.Ip, config.Fluent.Port)
+	lib.CheckError(err)
 
 	// set custom fire level
 	//hook.SetLevels([]log.Level{
@@ -126,7 +148,7 @@ func init() {
 	//})
 
 	// set static tag
-	hook.SetTag("log.server")
+	hook.SetTag("td.log.server")
 
 	// ignore field
 	hook.AddIgnore("context")
@@ -135,20 +157,6 @@ func init() {
 	hook.AddFilter("error", logrus_fluent.FilterError)
 
 	log.AddHook(hook)
-}
-
-func main() {
-	data, err := ioutil.ReadFile("./config/config.toml")
-	CheckError(err)
-	fmt.Print(string(data))
-
-	var dbInfo db.Info
-	if _, err := toml.Decode(string(data), &dbInfo); err != nil {
-		// handle error
-	}
-
-	log.Debug(dbInfo)
-	dbConn := db.NewDB(&dbInfo)
 
 	// Setup
 	e := echo.New()
