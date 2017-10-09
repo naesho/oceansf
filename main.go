@@ -1,12 +1,12 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"github.com/ohsaean/oceansf/cache"
 	"github.com/ohsaean/oceansf/db"
 	"github.com/ohsaean/oceansf/define"
 	"github.com/ohsaean/oceansf/grace"
@@ -22,8 +22,9 @@ import (
 
 type (
 	tomlConfig struct {
-		DB     db.Info    `toml:"database"`
-		Fluent FluentInfo `toml:"fluent"`
+		DB        db.Info       `toml:"database"`
+		Fluent    FluentInfo    `toml:"fluent"`
+		Memcached MemcachedInfo `toml:"memcached"`
 	}
 
 	FluentInfo struct {
@@ -31,10 +32,8 @@ type (
 		Port int
 	}
 
-	Context struct {
-		echo.Context
-		db  *sql.DB
-		req define.JsonMap
+	MemcachedInfo struct {
+		Endpoint string
 	}
 
 	Session struct {
@@ -75,28 +74,32 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 
 func gateway(c echo.Context) error {
 
-	ctx := c.(*Context)
-
-	var rawJson define.JsonMap
+	var req define.Json
 	rawBody, err := ioutil.ReadAll(c.Request().Body)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
 
-	err = json.Unmarshal(rawBody, &rawJson)
+	err = json.Unmarshal(rawBody, &req)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
 
 	var api string
-	api = rawJson["api"].(string)
+	api = req["api"].(string)
 	handlerFunc, ok := MsgHandler[api]
-	ctx.req = rawJson
 
 	if ok {
-		ret := handlerFunc(c)
+		ret, err := handlerFunc(req)
+		if err != nil {
+			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
+			return c.JSON(http.StatusOK, define.Json{
+				"retcode": 1001,
+				"retmsg":  err.Error(),
+			})
+		}
 		return c.JSON(http.StatusOK, ret)
 	} else {
 		return c.String(http.StatusNotFound, "api_parsing_error")
@@ -111,22 +114,7 @@ func (s *Stats) stat(c echo.Context) error {
 
 func init() {
 
-}
-
-func main() {
-	data, err := ioutil.ReadFile("./config/config.toml")
-	lib.CheckError(err)
-
 	var config tomlConfig
-
-	_, err = toml.Decode(string(data), &config)
-	lib.CheckError(err)
-
-	log.Debug(&define.JsonMap{
-		"msg":  "config.tml result",
-		"data": config.DB,
-	})
-	dbConn := db.NewDB(&config.DB)
 
 	// Log as JSON instead of the default ASCII formatter.
 	log.SetFormatter(&log.JSONFormatter{})
@@ -138,6 +126,23 @@ func main() {
 	// Only log the warning severity or above.
 	log.SetLevel(log.DebugLevel)
 
+	// Application Configuration
+	data, err := ioutil.ReadFile("./config/config.toml")
+	lib.CheckError(err)
+
+	_, err = toml.Decode(string(data), &config)
+	lib.CheckError(err)
+
+	log.Debug("endpoint of memcached : " + config.Memcached.Endpoint)
+	log.Debug("endpoint of db : " + config.DB.Ip)
+
+	// Initialize Mysql Client
+	db.Init(&config.DB)
+
+	// Initialize ElastiCache (Memcached Cluster) Client
+	cache.InitMemcache(config.Memcached.Endpoint)
+
+	// Forward to Fluent (log aggregator)
 	hook, err := logrus_fluent.New(config.Fluent.Ip, config.Fluent.Port)
 	lib.CheckError(err)
 
@@ -147,38 +152,32 @@ func main() {
 	//	log.ErrorLevel,
 	//})
 
-	// set static tag
+	// Set static tag
 	hook.SetTag("td.log.server")
 
-	// ignore field
+	// Ignore field
 	hook.AddIgnore("context")
 
-	// filter func
+	// Filter func
 	hook.AddFilter("error", logrus_fluent.FilterError)
 
 	log.AddHook(hook)
+}
+
+func main() {
 
 	// Setup
 	e := echo.New()
 	s := NewStats()
 
 	// Middleware
-
-	// Create a middleware to extend default context
-	e.Use(func(h echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			ctx := &Context{c, dbConn, nil}
-			return h(ctx)
-		}
-	})
 	e.Use(middleware.Logger()) // like nginx access log
 	e.Use(middleware.Recover())
 	e.Use(s.Process)
 
 	// Router
 	e.GET("/", func(c echo.Context) error {
-		cc := c.(*Context)
-		return cc.String(http.StatusOK, "Hello :D")
+		return c.String(http.StatusOK, "Hello :D")
 	})
 	e.GET("/stat", s.stat)
 	e.POST("/gateway", gateway)

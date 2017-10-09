@@ -1,7 +1,10 @@
 package model
 
 import (
-	"database/sql"
+	"encoding/json"
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/ohsaean/oceansf/cache"
+	"github.com/ohsaean/oceansf/db"
 	"github.com/ohsaean/oceansf/define"
 	"github.com/ohsaean/oceansf/lib"
 	log "github.com/sirupsen/logrus"
@@ -22,22 +25,42 @@ func NewUser(UID int64) *User {
 	return &User{
 		UID:           UID,
 		Name:          "unknown",
-		Email:         "nonmae@github.com",
+		Email:         "unknown@github.com",
 		RegisterDate:  "2017-01-01 00:00:00",
 		LastLoginDate: "2017-01-01 00:00:00",
 	}
 }
 
-func Load(db *sql.DB, uid int64) *define.JsonMap {
+func getCacheKey(uid int64) string {
+	return define.MemcachePrefix + "user:" + lib.Itoa64(uid)
+}
+
+func LoadUser(uid int64) (u *User, err error) {
+
+	dbConn := db.Conn
+	mc := cache.Mcache
 
 	// memcached (cache data)
+	key := getCacheKey(uid)
+
+	item, err := mc.Get(key)
+	if err != memcache.ErrCacheMiss {
+		if err = json.Unmarshal(item.Value, &u); err != nil {
+			lib.CheckError(err)
+			return nil, err
+		}
+
+		log.Debug("cache hit")
+		log.Debug(string(item.Value))
+		return u, nil
+	}
 
 	// when cache fail -> read db
-	user := NewUser(uid)
+	u = NewUser(uid)
 	// cache fail -> select user data from table
 	query := "SELECT SQL_NO_CACHE * FROM USER WHERE user_id = ?"
 
-	stmt, err := db.Prepare(query)
+	stmt, err := dbConn.Prepare(query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,23 +69,33 @@ func Load(db *sql.DB, uid int64) *define.JsonMap {
 	lib.CheckError(err)
 
 	for rows.Next() {
-		err = rows.Scan(&user.UID, &user.Name, &user.Email, &user.RegisterDate, &user.LastLoginDate)
+		err = rows.Scan(&u.UID, &u.Name, &u.Email, &u.RegisterDate, &u.LastLoginDate)
 		lib.CheckError(err)
 	}
 	log.Info("load user data")
 
-	ret := &define.JsonMap{
-		"user":    user,
-		"retcode": 100,
+	// cache data
+	data, err := json.Marshal(u)
+	if err != nil {
+		lib.CheckError(err)
+		return nil, err
 	}
 
-	return ret
+	setItem := &cache.Item{
+		Key:        key,
+		Value:      data,
+		Expiration: 10,
+	}
+	err = mc.Set(setItem)
+	lib.CheckError(err)
+
+	return u, nil
 }
 
 func (u *User) Save() {
-	// update or insert (upsert)
+
 }
 
 func (u *User) Remove() {
-	// delete data
+
 }

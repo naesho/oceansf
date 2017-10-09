@@ -10,3 +10,6 @@ dbname = "database name"
 [fluent]
 ip = "localhost"
 port = 24224
+
+[memcached]
+endpoint = "localhost:11211"

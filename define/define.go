@@ -1,5 +1,9 @@
 package define
 
 type (
-	JsonMap map[string]interface{}
+	Json map[string]interface{}
+)
+
+const (
+	MemcachePrefix = "oceansf:"
 )

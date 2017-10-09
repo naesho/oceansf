@@ -1,9 +1,9 @@
 package lib
 
 import (
-	"fmt"
 	log "github.com/sirupsen/logrus"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -20,6 +20,48 @@ func GetNow() time.Time {
 	return t
 }
 
+func GetDateTime() string {
+	t := GetNow()
+	layoutYmdHis := "2006-01-02 15:04:05"
+	return t.Format(layoutYmdHis)
+}
+
+func GetDateYmd() string {
+	t := GetNow()
+	layout := "20060102"
+	return t.Format(layout)
+}
+
+func Atoi64(s string) int64 {
+	integer, err := strconv.Atoi(s)
+	CheckError(err)
+	return int64(integer)
+}
+
+func Atoi32(s string) int32 {
+	integer, err := strconv.Atoi(s)
+	CheckError(err)
+	return int32(integer)
+}
+
+func Atoi(s string) int {
+	integer, err := strconv.Atoi(s)
+	CheckError(err)
+	return integer
+}
+
+func Itoa64(i int64) string {
+	return strconv.FormatInt(i, 10)
+}
+
+func Itoa32(i int32) string {
+	return strconv.Itoa(int(i))
+}
+
+func Itoa(i int) string {
+	return strconv.Itoa(i)
+}
+
 func GetUnixTime() int64 {
 	t := GetNow().Unix()
 	return t
@@ -28,15 +70,6 @@ func GetUnixTime() int64 {
 func GetMicroTime() int64 {
 	t := GetNow().UnixNano()
 	return t
-}
-
-func GetDateTime() string {
-	t := GetNow()
-	//t.Format("2016-01-01 23:59:59") timezone 안 없어짐
-	y, m, d := t.Date()
-	h, i, s := t.Clock()
-	ymdhis := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d", y, m, d, h, i, s)
-	return ymdhis
 }
 
 type TimerInfo struct {
