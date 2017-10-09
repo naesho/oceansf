@@ -33,16 +33,29 @@ type Client struct {
 	*memcache.Client
 }
 
-// Set abstracts the memcache client details away,
-// by copying over the values provided by the user into the Set method,
-// as coercing the custom Item type to the required memcache.Item type isn't possible.
-// Downside is if memcache client fields ever change, it'll introduce a break
-func (c *Client) Set(item *Item) error {
-	return c.Client.Set(&memcache.Item{
-		Key:        item.Key,
-		Value:      item.Value,
-		Expiration: item.Expiration,
-	})
+func (c *Client) Get(key string) (*memcache.Item, error) {
+	// TODO performance check
+	return c.Client.Get(key)
+}
+
+func (c *Client) Delete(key string) error {
+	return c.Client.Delete(key)
+}
+
+func (c *Client) Set(item *memcache.Item) error {
+	return c.Client.Set(item)
+}
+
+func (c *Client) Add(item *memcache.Item) error {
+	return c.Client.Add(item)
+}
+
+func (c *Client) Cas(item *memcache.Item) error {
+	return c.Client.CompareAndSwap(item)
+}
+
+func (c *Client) CasDelayed(item *Item) error {
+	// queue item --> when db transaction success --> flush and do CompareAndSwap operation
 }
 
 // New returns an instance of the memcache client

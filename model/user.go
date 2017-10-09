@@ -43,7 +43,8 @@ func LoadUser(uid int64) (u *User, err error) {
 	// memcached (cache data)
 	key := getCacheKey(uid)
 
-	item, err := mc.Get(key)
+	var item *memcache.Item
+	item, err = mc.Get(key)
 	if err != memcache.ErrCacheMiss {
 		if err = json.Unmarshal(item.Value, &u); err != nil {
 			lib.CheckError(err)
@@ -81,12 +82,12 @@ func LoadUser(uid int64) (u *User, err error) {
 		return nil, err
 	}
 
-	setItem := &cache.Item{
+	item = &memcache.Item{
 		Key:        key,
 		Value:      data,
 		Expiration: 10,
 	}
-	err = mc.Set(setItem)
+	err = mc.Set(item)
 	lib.CheckError(err)
 
 	return u, nil

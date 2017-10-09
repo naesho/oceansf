@@ -95,10 +95,14 @@ func gateway(c echo.Context) error {
 		ret, err := handlerFunc(req)
 		if err != nil {
 			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
+			// TODO db rollback, memcache rollback
+
 			return c.JSON(http.StatusOK, define.Json{
 				"retcode": 1001,
 				"retmsg":  err.Error(),
 			})
+
+			// memcache 처리 goroutine 띄워서 성공시에 cas 하도록 ? --> channel 을 통해서 완료 시그널 주도록..
 		}
 		return c.JSON(http.StatusOK, ret)
 	} else {
@@ -132,9 +136,6 @@ func init() {
 
 	_, err = toml.Decode(string(data), &config)
 	lib.CheckError(err)
-
-	log.Debug("endpoint of memcached : " + config.Memcached.Endpoint)
-	log.Debug("endpoint of db : " + config.DB.Ip)
 
 	// Initialize Mysql Client
 	db.Init(&config.DB)
