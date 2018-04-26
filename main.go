@@ -140,18 +140,24 @@ func init() {
 	// Initialize Mysql Client
 	db.Init(&config.DB)
 
-	// Initialize ElastiCache (Memcached Cluster) Client
+	// Initialize Memcached Client
 	cache.InitMemcache(config.Memcached.Endpoint)
 
 	// Forward to Fluent (log aggregator)
-	hook, err := logrus_fluent.New(config.Fluent.Ip, config.Fluent.Port)
+	hook, err := logrus_fluent.NewWithConfig(logrus_fluent.Config{
+		Host:config.Fluent.Ip,
+		Port:config.Fluent.Port,
+	})
 	lib.CheckError(err)
 
 	// set custom fire level
-	//hook.SetLevels([]log.Level{
-	//	log.PanicLevel,
-	//	log.ErrorLevel,
-	//})
+	hook.SetLevels([]log.Level{
+		log.PanicLevel,
+		log.ErrorLevel,
+		log.WarnLevel,
+		log.InfoLevel,
+		log.DebugLevel,
+	})
 
 	// Set static tag
 	hook.SetTag("td.log.server")

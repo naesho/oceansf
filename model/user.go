@@ -73,7 +73,7 @@ func LoadUser(uid int64) (u *User, err error) {
 		err = rows.Scan(&u.UID, &u.Name, &u.Email, &u.RegisterDate, &u.LastLoginDate)
 		lib.CheckError(err)
 	}
-	log.Info("load user data")
+	log.Info("load user data from DB")
 
 	// cache data
 	data, err := json.Marshal(u)
@@ -85,7 +85,7 @@ func LoadUser(uid int64) (u *User, err error) {
 	item = &memcache.Item{
 		Key:        key,
 		Value:      data,
-		Expiration: 10,
+		Expiration: 60,
 	}
 	err = mc.Set(item)
 	lib.CheckError(err)

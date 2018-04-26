@@ -43,7 +43,6 @@ crashlytics-build.properties
 fabric.properties
 
 *.exe
-*.sh
 projectFilesBackup/
 
 # DB Account, Password..
