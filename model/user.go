@@ -3,10 +3,10 @@ package model
 import (
 	"encoding/json"
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/ohsaean/oceansf/cache"
-	"github.com/ohsaean/oceansf/db"
-	"github.com/ohsaean/oceansf/define"
-	"github.com/ohsaean/oceansf/lib"
+	"github.com/naesho/oceansf/cache"
+	"github.com/naesho/oceansf/db"
+	"github.com/naesho/oceansf/define"
+	"github.com/naesho/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -59,7 +59,7 @@ func LoadUser(uid int64) (u *User, err error) {
 	// when cache fail -> read db
 	u = NewUser(uid)
 	// cache fail -> select user data from table
-	query := "SELECT SQL_NO_CACHE * FROM USER WHERE user_id = ?"
+	query := "SELECT SQL_NO_CACHE * FROM USER WHERE uid = ?"
 
 	stmt, err := dbConn.Prepare(query)
 	if err != nil {

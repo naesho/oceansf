@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/labstack/gommon/log"
-	"github.com/ohsaean/oceansf/lib"
+	"github.com/naesho/oceansf/lib"
 )
 
 type Info struct {
@@ -19,7 +19,6 @@ var (
 	Conn *sql.DB
 )
 
-// Initialize instance for using main package
 func Init(dbInfo *Info) {
 	var err error
 	dsn := dbInfo.User + ":" + dbInfo.Pass + "@tcp(" + dbInfo.Ip + ":" + dbInfo.Port + ")/" + dbInfo.DbName + "?charset=utf8"

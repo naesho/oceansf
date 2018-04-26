@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/ohsaean/oceansf/define"
-	"github.com/ohsaean/oceansf/model"
+	"github.com/naesho/oceansf/define"
+	"github.com/naesho/oceansf/model"
 )
 
 type MsgHandlerFunc func(req define.Json) (interface{}, error)
