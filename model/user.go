@@ -8,6 +8,7 @@ import (
 	"github.com/naesho/oceansf/define"
 	"github.com/naesho/oceansf/lib"
 	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 // database crud object
@@ -37,6 +38,8 @@ func getCacheKey(uid int64) string {
 
 func LoadUser(uid int64) (u *User, err error) {
 
+	time.Sleep(time.Second * 10)
+
 	dbConn := db.Conn
 	mc := cache.Mcache
 
@@ -45,15 +48,85 @@ func LoadUser(uid int64) (u *User, err error) {
 
 	var item *memcache.Item
 	item, err = mc.Get(key)
-	if err != memcache.ErrCacheMiss {
-		if err = json.Unmarshal(item.Value, &u); err != nil {
-			lib.CheckError(err)
-			return nil, err
-		}
 
-		log.Debug("cache hit")
-		log.Debug(string(item.Value))
-		return u, nil
+	log.Debug("cache get")
+	if err == nil {
+		if item != nil {
+			if err = json.Unmarshal(item.Value, &u); err != nil {
+				lib.CheckError(err)
+				return nil, err
+			}
+
+			log.Debug("cache hit")
+			log.Debug(u)
+			return u, nil
+		}
+	} else {
+		log.Error(err)
+	}
+
+	// when cache fail -> read db
+	u = NewUser(uid)
+	// cache fail -> select user data from table
+	query := "SELECT SQL_NO_CACHE * FROM USER WHERE uid = ?"
+
+	stmt, err := dbConn.Prepare(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stmt.Close() // danger!
+	rows, err := stmt.Query(uid)
+	lib.CheckError(err)
+
+	for rows.Next() {
+		err = rows.Scan(&u.UID, &u.Name, &u.Email, &u.RegisterDate, &u.LastLoginDate)
+		lib.CheckError(err)
+	}
+	log.Info("load user data from DB")
+
+	// cache data
+	data, err := json.Marshal(u)
+	if err != nil {
+		lib.CheckError(err)
+		return nil, err
+	}
+
+	item = &memcache.Item{
+		Key:        key,
+		Value:      data,
+		Expiration: 60,
+	}
+	err = mc.Set(item)
+	lib.CheckError(err)
+
+	return u, nil
+}
+
+func LoadUserNoWait(uid int64) (u *User, err error) {
+
+	dbConn := db.Conn
+	mc := cache.Mcache
+
+	// memcached (cache data)
+	key := getCacheKey(uid)
+
+	var item *memcache.Item
+	item, err = mc.Get(key)
+
+	log.Debug("cache get")
+	if err == nil {
+		if item != nil {
+			if err = json.Unmarshal(item.Value, &u); err != nil {
+				lib.CheckError(err)
+				return nil, err
+			}
+
+			log.Debug("cache hit")
+			log.Debug(u)
+			return u, nil
+		}
+	} else {
+		log.Error(err)
 	}
 
 	// when cache fail -> read db

@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"github.com/bradfitz/gomemcache/memcache"
+	"errors"
 )
 
 type (
@@ -72,6 +74,40 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func GetGlobalLockKey(uid int64) string {
+	return "globalLock:" + lib.Itoa64(uid)
+}
+
+func Lock(key string) error {
+
+	maxCount := 20
+
+	for i := 0; i < maxCount; i++ {
+		err := cache.Mcache.Add(&memcache.Item{
+			Key:        key,
+			Value:      []byte("1"),
+			Expiration: 10,
+		})
+
+		if err == memcache.ErrNotStored {
+			// spin lock
+			log.Debug("lock key:", key, "try :",i)
+			time.Sleep(time.Second * 1)
+			continue
+		} else {
+			log.Error()
+		}
+
+		return nil
+	}
+
+	return errors.New("lock fail")
+}
+
+func UnLock(key string) {
+	cache.Mcache.Delete(key)
+}
+
 func gateway(c echo.Context) error {
 
 	var req define.Json
@@ -89,21 +125,33 @@ func gateway(c echo.Context) error {
 
 	var api string
 	api = req["api"].(string)
-	handlerFunc, ok := MsgHandler[api]
+	uid := req["user_id"].(float64)
 
+	handlerFunc, ok := MsgHandler[api]
 	if ok {
+		lockKey := GetGlobalLockKey(int64(uid))
+
+		// 중복 처리 방지를 위한 memcached add lock
+		lockError := Lock(lockKey)
+		if lockError != nil {
+			return lockError
+		}
+		defer UnLock(lockKey)
 		ret, err := handlerFunc(req)
 		if err != nil {
 			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
-			// TODO db rollback, memcache rollback
-
+			// TODO db rollback, memcache discard
+			// panic - recover 됐을 때는 어떻게 하지..
 			return c.JSON(http.StatusOK, define.Json{
 				"retcode": 1001,
 				"retmsg":  err.Error(),
 			})
-
-			// memcache 처리 goroutine 띄워서 성공시에 cas 하도록 ? --> channel 을 통해서 완료 시그널 주도록..
 		}
+
+		// 성공
+		// TODO memcache cas & delayed 처리?
+		// DB 트랜잭션이 성공하고 나서 memcached 에 cas 를 통해 반영해야함 --> 지금은 일단 handlerFunc 에서 처리.
+		// memcache 처리 goroutine 띄워서 성공시에 cas 하도록 ? --> channel 을 통해서 완료 시그널 주도록..
 		return c.JSON(http.StatusOK, ret)
 	} else {
 		return c.String(http.StatusNotFound, "api_parsing_error")
