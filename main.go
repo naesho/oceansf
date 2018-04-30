@@ -42,6 +42,15 @@ type (
 		ID         int    `json:"id"`
 		Name       string `json:"name"`
 		SessionKey string `json:"session_key"`
+		// 국가
+		// 언어
+		// DID
+		// 앱버전
+		// 세션 갱신 시간
+		// 로그인 날짜
+		// 로그인 국가
+		// 마켓
+		// 등등등 ... etc
 	}
 
 	Stats struct {
@@ -74,13 +83,24 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func SessionCheck(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// TODO 세션 체크는 여기서
+		log.Debug("TODO : Session Check ")
+		if err := next(c); err != nil {
+			c.Error(err)
+		}
+		return nil
+	}
+}
+
 func GetGlobalLockKey(uid int64) string {
 	return "globalLock:" + lib.Itoa64(uid)
 }
 
 func Lock(key string) error {
 
-	maxCount := 20
+	maxCount := 20 // TODO config 로 나중에..
 
 	for i := 0; i < maxCount; i++ {
 		err := cache.Mcache.Add(&memcache.Item{
@@ -92,7 +112,7 @@ func Lock(key string) error {
 		if err == memcache.ErrNotStored {
 			// spin lock
 			log.Debug("lock key:", key, "try :",i)
-			time.Sleep(time.Second * 1)
+			time.Sleep(time.Millisecond * 20) // TODO spin lock 시간 config
 			continue
 		} else {
 			log.Error()
@@ -157,6 +177,8 @@ func gateway(c echo.Context) error {
 		return c.String(http.StatusNotFound, "api_parsing_error")
 	}
 }
+
+
 
 func (s *Stats) stat(c echo.Context) error {
 	s.mutex.RLock()
@@ -225,7 +247,16 @@ func main() {
 	e := echo.New()
 	s := NewStats()
 
-	// Middleware
+	// Middleware before router
+	// TODO 프로파일러
+	// TODO 서버 상태 체크
+	e.Pre(SessionCheck)
+	// TODO 요청 파라메터 검사
+	// TODO 아이피 대역 체크?
+	// TODO 버전 체크 (리소스나 클라-서버간 맞춰야 하는 데이터 버전들)
+	// TODO 제재 같은거도 체크?
+
+	// Middleware after router
 	e.Use(middleware.Logger()) // like nginx access log
 	e.Use(middleware.Recover())
 	e.Use(s.Process)
