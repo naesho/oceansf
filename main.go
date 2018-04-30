@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/naesho/oceansf/cache"
+	"github.com/naesho/oceansf/context"
 	"github.com/naesho/oceansf/db"
 	"github.com/naesho/oceansf/define"
 	"github.com/naesho/oceansf/grace"
@@ -18,9 +19,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"github.com/bradfitz/gomemcache/memcache"
-	"errors"
 )
+
+var config tomlConfig
 
 type (
 	tomlConfig struct {
@@ -83,7 +84,7 @@ func (s *Stats) Process(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func SessionCheck(next echo.HandlerFunc) echo.HandlerFunc {
+func SessionCheckMiddleWare(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// TODO 세션 체크는 여기서
 		log.Debug("TODO : Session Check ")
@@ -94,44 +95,12 @@ func SessionCheck(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func GetGlobalLockKey(uid int64) string {
-	return "globalLock:" + lib.Itoa64(uid)
-}
-
-func Lock(key string) error {
-
-	maxCount := 20 // TODO config 로 나중에..
-
-	for i := 0; i < maxCount; i++ {
-		err := cache.Mcache.Add(&memcache.Item{
-			Key:        key,
-			Value:      []byte("1"),
-			Expiration: 10,
-		})
-
-		if err == memcache.ErrNotStored {
-			// spin lock
-			log.Debug("lock key:", key, "try :",i)
-			time.Sleep(time.Millisecond * 20) // TODO spin lock 시간 config
-			continue
-		} else {
-			log.Error()
-		}
-
-		return nil
-	}
-
-	return errors.New("lock fail")
-}
-
-func UnLock(key string) {
-	cache.Mcache.Delete(key)
-}
-
 func gateway(c echo.Context) error {
 
+	reqCtx := c.(*context.RequestContext)
+
 	var req define.Json
-	rawBody, err := ioutil.ReadAll(c.Request().Body)
+	rawBody, err := ioutil.ReadAll(reqCtx.Request().Body)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -149,15 +118,15 @@ func gateway(c echo.Context) error {
 
 	handlerFunc, ok := MsgHandler[api]
 	if ok {
-		lockKey := GetGlobalLockKey(int64(uid))
+		lockKey := cache.GetGlobalLockKey(int64(uid))
 
 		// 중복 처리 방지를 위한 memcached add lock
-		lockError := Lock(lockKey)
+		lockError := reqCtx.Cache.Lock(lockKey)
 		if lockError != nil {
 			return lockError
 		}
-		defer UnLock(lockKey)
-		ret, err := handlerFunc(req)
+		defer reqCtx.Cache.UnLock(lockKey)
+		ret, err := handlerFunc(req, reqCtx)
 		if err != nil {
 			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
 			// TODO db rollback, memcache discard
@@ -178,8 +147,6 @@ func gateway(c echo.Context) error {
 	}
 }
 
-
-
 func (s *Stats) stat(c echo.Context) error {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -187,8 +154,6 @@ func (s *Stats) stat(c echo.Context) error {
 }
 
 func init() {
-
-	var config tomlConfig
 
 	// Log as JSON instead of the default ASCII formatter.
 	log.SetFormatter(&log.JSONFormatter{})
@@ -208,15 +173,15 @@ func init() {
 	lib.CheckError(err)
 
 	// Initialize Mysql Client
-	db.Init(&config.DB)
+	//db.Init(&config.DB)
 
 	// Initialize Memcached Client
-	cache.InitMemcache(config.Memcached.Endpoint)
+	//cache.InitMemcache(config.Memcached.Endpoint)
 
 	// Forward to Fluent (log aggregator)
 	hook, err := logrus_fluent.NewWithConfig(logrus_fluent.Config{
-		Host:config.Fluent.Ip,
-		Port:config.Fluent.Port,
+		Host: config.Fluent.Ip,
+		Port: config.Fluent.Port,
 	})
 	lib.CheckError(err)
 
@@ -241,6 +206,21 @@ func init() {
 	log.AddHook(hook)
 }
 
+func CustomContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		// 매번 connection 생성..
+		cc := &context.RequestContext{
+			Context: c,
+			DB:      db.NewConnection(&config.DB),
+			Cache:   cache.NewConnection(config.Memcached.Endpoint),
+		}
+
+		// 커넥션 정리될때 같이 close
+		defer cc.DB.Close()
+		return next(cc)
+	}
+}
+
 func main() {
 
 	// Setup
@@ -248,9 +228,11 @@ func main() {
 	s := NewStats()
 
 	// Middleware before router
+	e.Use(CustomContextMiddleware)
+
 	// TODO 프로파일러
 	// TODO 서버 상태 체크
-	e.Pre(SessionCheck)
+	e.Use(SessionCheckMiddleWare)
 	// TODO 요청 파라메터 검사
 	// TODO 아이피 대역 체크?
 	// TODO 버전 체크 (리소스나 클라-서버간 맞춰야 하는 데이터 버전들)

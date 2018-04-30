@@ -3,12 +3,11 @@ package model
 import (
 	"encoding/json"
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/naesho/oceansf/cache"
-	"github.com/naesho/oceansf/db"
 	"github.com/naesho/oceansf/define"
 	"github.com/naesho/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 	"time"
+	"github.com/naesho/oceansf/context"
 )
 
 // database crud object
@@ -36,12 +35,12 @@ func getCacheKey(uid int64) string {
 	return define.MemcachePrefix + "user:" + lib.Itoa64(uid)
 }
 
-func LoadUser(uid int64) (u *User, err error) {
+func LoadUser(uid int64, reqCtx *context.RequestContext) (u *User, err error) {
 
 	time.Sleep(time.Second * 10)
 
-	dbConn := db.Conn
-	mc := cache.Mcache
+	dbConn := reqCtx.DB
+	mc := reqCtx.Cache
 
 	// memcached (cache data)
 	key := getCacheKey(uid)
@@ -102,10 +101,10 @@ func LoadUser(uid int64) (u *User, err error) {
 	return u, nil
 }
 
-func LoadUserNoWait(uid int64) (u *User, err error) {
+func LoadUserNoWait(uid int64, reqCtx *context.RequestContext) (u *User, err error) {
 
-	dbConn := db.Conn
-	mc := cache.Mcache
+	dbConn := reqCtx.DB
+	mc := reqCtx.Cache
 
 	// memcached (cache data)
 	key := getCacheKey(uid)

@@ -29,3 +29,22 @@ func Init(dbInfo *Info) {
 	err = Conn.Ping()
 	lib.CheckError(err)
 }
+
+type DB struct {
+	*sql.DB
+}
+
+func NewConnection(dbInfo *Info) *DB {
+	var err error
+	dsn := dbInfo.User + ":" + dbInfo.Pass + "@tcp(" + dbInfo.Ip + ":" + dbInfo.Port + ")/" + dbInfo.DbName + "?charset=utf8"
+	Conn, err = sql.Open("mysql", dsn)
+	log.Debug("create new mysql connection")
+	lib.CheckError(err)
+	return &DB{
+		Conn,
+	}
+}
+
+func (db *DB) SomethingWork() {
+	log.Debug("extend sql.Db")
+}
