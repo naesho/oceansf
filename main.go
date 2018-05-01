@@ -216,8 +216,22 @@ func CustomContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		// 커넥션 정리될때 같이 close
+		// 트랜잭션 처리는 해당 핸들러 내에서 알아서 하는걸로..
 		defer cc.DB.Close()
-		return next(cc)
+		err := next(cc)
+
+		// defer 직전에 처리되는 부분
+		if err != nil {
+			// 에러 상황임
+			// cache 반영하지 않는다
+			cc.Cache.DiscardAll()
+			return err
+		}
+
+		// 큐잉 되었던 cache 반영
+		cc.Cache.CommitAll()
+
+		return nil
 	}
 }
 
@@ -226,6 +240,28 @@ func main() {
 	// Setup
 	e := echo.New()
 	s := NewStats()
+
+
+	/**
+	미들웨어 처리 순서
+	middleware-Pre  : before
+	middleware-Use-1: before
+	middleware-Use-2: before
+	middleware-Group: before
+	middleware-Route: before
+	logic: main
+	logic: defer
+	middleware-Route: after
+	middleware-Route: defer
+	middleware-Group: after
+	middleware-Group: defer
+	middleware-Use-2: after
+	middleware-Use-2: defer
+	middleware-Use-1: after
+	middleware-Use-1: defer
+	middleware-Pre  : after
+	middleware-Pre  : defer
+	 */
 
 	// Middleware before router
 	e.Use(CustomContextMiddleware)

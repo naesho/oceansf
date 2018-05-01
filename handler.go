@@ -10,15 +10,15 @@ type MsgHandlerFunc func(req define.Json, reqCtx *context.RequestContext) (inter
 
 var MsgHandler = map[string]MsgHandlerFunc{
 	"GetUser": GetUser,
-	"GetUserNoWait": GetUserNoWait,
+	"Login": Login,
+}
+
+func Login(req define.Json, reqCtx *context.RequestContext) (interface{}, error) {
+	uid := req["user_id"].(float64)
+	return model.Login(int64(uid), reqCtx)
 }
 
 func GetUser(req define.Json, reqCtx *context.RequestContext) (interface{}, error) {
 	uid := req["user_id"].(float64)
 	return model.LoadUser(int64(uid), reqCtx)
-}
-
-func GetUserNoWait(req define.Json, reqCtx *context.RequestContext) (interface{}, error) {
-	uid := req["user_id"].(float64)
-	return model.LoadUserNoWait(int64(uid), reqCtx)
 }
