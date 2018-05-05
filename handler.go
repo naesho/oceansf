@@ -1,24 +1,31 @@
 package main
 
 import (
-	"github.com/naesho/oceansf/define"
-	"github.com/naesho/oceansf/model"
-	"github.com/naesho/oceansf/context"
+	"github.com/ohsean53/oceansf/context"
+	"github.com/ohsean53/oceansf/controller"
+	"github.com/ohsean53/oceansf/define"
 )
 
-type MsgHandlerFunc func(req define.Json, reqCtx *context.RequestContext) (interface{}, error)
+type MsgHandlerFunc func(req define.Json, ctx *context.SessionContext) (interface{}, error)
 
 var MsgHandler = map[string]MsgHandlerFunc{
-	"GetUser": GetUser,
-	"Login": Login,
+	"Login":      Login,
+	"RemoveUser": RemoveUser,
 }
 
-func Login(req define.Json, reqCtx *context.RequestContext) (interface{}, error) {
-	uid := req["user_id"].(float64)
-	return model.Login(int64(uid), reqCtx)
+func Login(req define.Json, ctx *context.SessionContext) (interface{}, error) {
+	id := req["id"].(string)
+	name := req["name"].(string)
+	email := req["email"].(string)
+	uc := controller.UserController{}
+	return uc.Login(ctx, id, name, email)
 }
 
-func GetUser(req define.Json, reqCtx *context.RequestContext) (interface{}, error) {
-	uid := req["user_id"].(float64)
-	return model.LoadUser(int64(uid), reqCtx)
+func RemoveUser(req define.Json, ctx *context.SessionContext) (interface{}, error) {
+	id := req["id"].(string)
+	uc := controller.UserController{}
+	err := uc.Remove(ctx, id)
+	return define.Json{
+		"retcode": 100,
+	}, err
 }

@@ -1,2 +1,2 @@
-go build github.com/naesho/oceansf/
+go build github.com/ohsean53/oceansf/
 

@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/labstack/gommon/log"
-	"github.com/naesho/oceansf/lib"
+	"github.com/ohsean53/oceansf/lib"
 )
 
 type Info struct {

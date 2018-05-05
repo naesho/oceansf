@@ -3,13 +3,9 @@ package cache
 import (
 	"errors"
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/naesho/oceansf/lib"
+	"github.com/ohsean53/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 	"time"
-)
-
-var (
-	Mcache *memcache.Client
 )
 
 const (
@@ -26,11 +22,6 @@ type Item struct {
 	dirty    bool
 }
 
-func InitMemcache(endpoint string) {
-	Mcache = memcache.New(endpoint)
-	log.Debug("memcached init")
-}
-
 func NewConnection(endpoint string) *Cache {
 	client := memcache.New(endpoint)
 	return &Cache{
@@ -41,6 +32,10 @@ func NewConnection(endpoint string) *Cache {
 
 func GetGlobalLockKey(uid int64) string {
 	return "globalLock:" + lib.Itoa64(uid)
+}
+
+func GetGlobalLockKeyWithId(id string) string {
+	return "globalLock:" + id
 }
 
 func (c *Cache) Lock(key string) error {
@@ -138,8 +133,11 @@ func (c *Cache) CommitAll() {
 			log.Info("cas err :", casErr)
 			if casErr == memcache.ErrCacheMiss {
 				// 캐시서버에 없는 경우임
-				// c.cachedData[key] 에 없다고 가정해야함
+				// c.cachedData[key] 에도 없다고 가정해야함
 				// cas 토큰이 없을때는 바로 set 하는게 맞는거같은데 casid가 unexported 되어 있어서 확인불가
+				// cas 토큰이 없다하면, cas 기능을 off 했다는 건가? <- 확인 필요.
+				// c.cachedData[key] 에 없다면 memcache 에서 get 을 하지 못한 것이므로, cas 를 통해서 저장하지 못함
+				// 혹시 모를 캐시 set 경합을 방지하기 위해 add로 처리함 (global lock 유발)
 				err = c.Client.Add(item.rawCache)
 				log.Info("cas cache miss, add key :", item.rawCache.Key)
 				if err == nil {
@@ -154,7 +152,7 @@ func (c *Cache) CommitAll() {
 			deleteErr := c.Delete(item.rawCache.Key)
 			if deleteErr != nil {
 				// 삭제도 실패한다면..나중에 오래된 데이터를 불러 올 수 있다.
-				// 장애시에 재시도를하게되면 처리시간이 길어져, 도미노 장애가 생길 수 도 있음
+				// 장애시에 재접속을 하도록 처리하게되면 그만큼 해당 세션의 요청 처리시간이 길어져, 도미노 장애가 생길 수 도 있음
 				log.Error("cas fail, delete error:", deleteErr)
 			}
 		}

@@ -2,12 +2,12 @@ package context
 
 import (
 	"github.com/labstack/echo"
-	"github.com/naesho/oceansf/db"
-	"github.com/naesho/oceansf/cache"
+	"github.com/ohsean53/oceansf/db"
+	"github.com/ohsean53/oceansf/cache"
 )
 
 // life cycle = Per Request
-type RequestContext struct {
+type SessionContext struct {
 	echo.Context
 	DB *db.DB
 	Cache *cache.Cache

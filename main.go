@@ -6,12 +6,12 @@ import (
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
-	"github.com/naesho/oceansf/cache"
-	"github.com/naesho/oceansf/context"
-	"github.com/naesho/oceansf/db"
-	"github.com/naesho/oceansf/define"
-	"github.com/naesho/oceansf/grace"
-	"github.com/naesho/oceansf/lib"
+	"github.com/ohsean53/oceansf/cache"
+	"github.com/ohsean53/oceansf/context"
+	"github.com/ohsean53/oceansf/db"
+	"github.com/ohsean53/oceansf/define"
+	"github.com/ohsean53/oceansf/grace"
+	"github.com/ohsean53/oceansf/lib"
 	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
@@ -97,10 +97,10 @@ func SessionCheckMiddleWare(next echo.HandlerFunc) echo.HandlerFunc {
 
 func gateway(c echo.Context) error {
 
-	reqCtx := c.(*context.RequestContext)
+	ctx := c.(*context.SessionContext)
 
 	var req define.Json
-	rawBody, err := ioutil.ReadAll(reqCtx.Request().Body)
+	rawBody, err := ioutil.ReadAll(ctx.Request().Body)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -114,19 +114,25 @@ func gateway(c echo.Context) error {
 
 	var api string
 	api = req["api"].(string)
-	uid := req["user_id"].(float64)
+
+	lockKey := ""
+	if api != "Login" {
+		uid := req["uid"].(float64)
+		lockKey = cache.GetGlobalLockKey(int64(uid))
+	} else {
+		id := req["id"].(string)
+		lockKey = cache.GetGlobalLockKeyWithId(id)
+	}
 
 	handlerFunc, ok := MsgHandler[api]
 	if ok {
-		lockKey := cache.GetGlobalLockKey(int64(uid))
-
 		// 중복 처리 방지를 위한 memcached add lock
-		lockError := reqCtx.Cache.Lock(lockKey)
+		lockError := ctx.Cache.Lock(lockKey)
 		if lockError != nil {
 			return lockError
 		}
-		defer reqCtx.Cache.UnLock(lockKey)
-		ret, err := handlerFunc(req, reqCtx)
+		defer ctx.Cache.UnLock(lockKey)
+		ret, err := handlerFunc(req, ctx)
 		if err != nil {
 			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
 			// TODO db rollback, memcache discard
@@ -138,9 +144,7 @@ func gateway(c echo.Context) error {
 		}
 
 		// 성공
-		// TODO memcache cas & delayed 처리?
 		// DB 트랜잭션이 성공하고 나서 memcached 에 cas 를 통해 반영해야함 --> 지금은 일단 handlerFunc 에서 처리.
-		// memcache 처리 goroutine 띄워서 성공시에 cas 하도록 ? --> channel 을 통해서 완료 시그널 주도록..
 		return c.JSON(http.StatusOK, ret)
 	} else {
 		return c.String(http.StatusNotFound, "api_parsing_error")
@@ -209,14 +213,14 @@ func init() {
 func CustomContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// 매번 connection 생성..
-		cc := &context.RequestContext{
+		cc := &context.SessionContext{
 			Context: c,
 			DB:      db.NewConnection(&config.DB),
 			Cache:   cache.NewConnection(config.Memcached.Endpoint),
 		}
 
 		// 커넥션 정리될때 같이 close
-		// 트랜잭션 처리는 해당 핸들러 내에서 알아서 하는걸로..
+		// 일단 트랜잭션 처리는 해당 핸들러 내에서 담당 하는걸로..
 		defer cc.DB.Close()
 		err := next(cc)
 
@@ -241,7 +245,6 @@ func main() {
 	e := echo.New()
 	s := NewStats()
 
-
 	/**
 	미들웨어 처리 순서
 	middleware-Pre  : before
@@ -261,7 +264,7 @@ func main() {
 	middleware-Use-1: defer
 	middleware-Pre  : after
 	middleware-Pre  : defer
-	 */
+	*/
 
 	// Middleware before router
 	e.Use(CustomContextMiddleware)
