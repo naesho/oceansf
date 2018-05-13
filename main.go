@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/BurntSushi/toml"
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/labstack/echo"
@@ -39,21 +40,6 @@ type (
 		Endpoint string
 	}
 
-	Session struct {
-		ID         int    `json:"id"`
-		Name       string `json:"name"`
-		SessionKey string `json:"session_key"`
-		// 국가
-		// 언어
-		// DID
-		// 앱버전
-		// 세션 갱신 시간
-		// 로그인 날짜
-		// 로그인 국가
-		// 마켓
-		// 등등등 ... etc
-	}
-
 	Stats struct {
 		Uptime       time.Time      `json:"uptime"`
 		RequestCount uint64         `json:"requestCount"`
@@ -61,6 +47,15 @@ type (
 		mutex        sync.RWMutex
 	}
 )
+
+func isLoginApi(api string) bool {
+	switch api {
+	case "Login":
+		return true
+	default:
+		return false
+	}
+}
 
 func NewStats() *Stats {
 	return &Stats{
@@ -88,9 +83,65 @@ func SessionCheckMiddleWare(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		// TODO 세션 체크는 여기서
 		log.Debug("TODO : Session Check ")
+
+		ctx := c.(*context.SessionContext)
+
+		// 로그인 api 인지 검사 후 로그인전단계라면 세션이 아직 만들어지지 않은 상태라서
+		// cache 에 get 하는대신 set 을 해야함.
+
+		api := ctx.ClientRequest["api"].(string)
+		var session context.Session
+		if isLoginApi(api) == false {
+			uid := int64(ctx.ClientRequest["uid"].(float64))
+
+			sessionKey := context.GetSessionCacheKey(uid)
+			log.Debug("load session uid : ", uid)
+			log.Debug("load session key : ", sessionKey)
+
+			rawData, err := ctx.Cache.Get(sessionKey)
+			if err != nil {
+				// memcache 에 데이터가 없다.
+				log.Info("session expired")
+				log.Error(err)
+				return err // TODO 세션 만료 error 정의 해야함
+			}
+
+			err = json.Unmarshal(rawData, &session)
+			if err != nil {
+				log.Error("invalid session data in memcached")
+				return err // 세션에 잘못된 데이터가 들어감
+			}
+
+			if session.UID != uid {
+				log.Error("invalid session data, not match UID")
+				return errors.New("invalid session data, not match UID") // UID가 일치 하지 않음
+			}
+
+			ctx.Session = &session
+		}
+
 		if err := next(c); err != nil {
 			c.Error(err)
 		}
+
+		if ctx.Session.UID > 0 {
+			// 세션 리필은 게이트웨이 나가고 나서 처리..
+			uid := ctx.Session.UID
+			sessionKey := context.GetSessionCacheKey(uid)
+			log.Debug("refresh session key :", sessionKey)
+
+			log.Debug("save session", ctx.Session)
+
+			data, err := json.Marshal(ctx.Session)
+			if err != nil {
+				return err
+			}
+			err = ctx.Cache.Set(sessionKey, data, 3600) // TODO 일단 한시간
+			if err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 }
@@ -99,29 +150,17 @@ func gateway(c echo.Context) error {
 
 	ctx := c.(*context.SessionContext)
 
-	var req define.Json
-	rawBody, err := ioutil.ReadAll(ctx.Request().Body)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	err = json.Unmarshal(rawBody, &req)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
 	var api string
-	api = req["api"].(string)
+
+	api = ctx.ClientRequest["api"].(string)
 
 	lockKey := ""
-	if api != "Login" {
-		uid := req["uid"].(float64)
-		lockKey = cache.GetGlobalLockKey(int64(uid))
-	} else {
-		id := req["id"].(string)
+	if isLoginApi(api) {
+		id := ctx.ClientRequest["id"].(string)
 		lockKey = cache.GetGlobalLockKeyWithId(id)
+	} else {
+		uid := ctx.ClientRequest["uid"].(float64)
+		lockKey = cache.GetGlobalLockKey(int64(uid))
 	}
 
 	handlerFunc, ok := MsgHandler[api]
@@ -132,7 +171,7 @@ func gateway(c echo.Context) error {
 			return lockError
 		}
 		defer ctx.Cache.UnLock(lockKey)
-		ret, err := handlerFunc(req, ctx)
+		ret, err := handlerFunc(ctx)
 		if err != nil {
 			// TODO 나중에 appError{ code, msg, error } 와 같은 별도 에러 구조체 정의
 			// TODO db rollback, memcache discard
@@ -217,12 +256,29 @@ func CustomContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			Context: c,
 			DB:      db.NewConnection(&config.DB),
 			Cache:   cache.NewConnection(config.Memcached.Endpoint),
+			Session: &context.Session{},
 		}
+
+		var req define.Json
+		rawBody, err := ioutil.ReadAll(cc.Request().Body)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		err = json.Unmarshal(rawBody, &req)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		// 클라 요청 파싱 (나중에 별도 미들웨어로?)
+		cc.ClientRequest = req
 
 		// 커넥션 정리될때 같이 close
 		// 일단 트랜잭션 처리는 해당 핸들러 내에서 담당 하는걸로..
 		defer cc.DB.Close()
-		err := next(cc)
+		err = next(cc)
 
 		// defer 직전에 처리되는 부분
 		if err != nil {

@@ -67,10 +67,9 @@ func (u *User) Load(ctx *context.SessionContext) (err error) {
 
 	// when cache fail -> read db
 	// cache fail -> select user data from table
-	query :=
-		"SELECT SQL_NO_CACHE * " +
-			"  FROM USER" +
-			" WHERE id = ?"
+	query := "SELECT SQL_NO_CACHE * " +
+		"       FROM USER" +
+		"      WHERE id = ?"
 
 	stmt, err := dbConn.Prepare(query)
 	if err != nil {
@@ -100,13 +99,12 @@ func (u *User) Load(ctx *context.SessionContext) (err error) {
 }
 
 func (u *User) Save(ctx *context.SessionContext) error {
-	query :=
-		"UPDATE USER " +
-			"SET name = ?," +
-			"    email = ?," +
-			"    register_date = ?," +
-			"    last_login_date = ?" +
-			"    WHERE id = ?"
+	query := "UPDATE USER " +
+		"        SET name = ?," +
+		"            email = ?," +
+		"            register_date = ?," +
+		"            last_login_date = ?" +
+		"      WHERE id = ?"
 
 	stmt, err := ctx.DB.Prepare(query)
 	lib.CheckError(err)

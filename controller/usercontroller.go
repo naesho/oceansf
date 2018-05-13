@@ -33,16 +33,42 @@ func (UserController) Login(ctx *context.SessionContext, id string, name string,
 		return nil, err
 	}
 
+	
+	// session 처리 미들웨어에서 세션을 저장해줌
+	ctx.Session.UID = user.UID
+	ctx.Session.Id = user.Id
+	ctx.Session.Name = user.Name
+	ctx.Session.Email = user.Email
+	ctx.Session.RegisterDate = user.RegisterDate
+	ctx.Session.LastLoginDate = user.LastLoginDate
+
 	return user, nil
 }
 
 func (UserController) Remove(ctx *context.SessionContext, id string) error {
-	// TODO 나중에 session data 에 uid 저장해서 id 없이 uid로 select , delete 가능하게..
 	user := model.NewUser(id)
 	err := user.Load(ctx)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
-	return user.Remove(ctx)
+
+
+	err = user.Remove(ctx)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	key := context.GetSessionCacheKey(user.UID)
+	err = ctx.Cache.Delete(key)
+
+	if err != nil {
+		return err
+	}
+
+	// 세션이 저장되지 않도록
+	ctx.Session.UID = 0
+
+	return nil
 }
