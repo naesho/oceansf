@@ -5,6 +5,8 @@ import (
 	"github.com/ohsean53/oceansf/context"
 	"github.com/ohsean53/oceansf/lib"
 	"github.com/ohsean53/oceansf/model"
+	"github.com/ohsean53/oceansf/apperr"
+	"github.com/ohsean53/oceansf/retcode"
 )
 
 type UserController struct {
@@ -64,7 +66,7 @@ func (UserController) Remove(ctx *context.SessionContext, id string) error {
 	err = ctx.Cache.Delete(key)
 
 	if err != nil {
-		return err
+		return apperr.New(retcode.MemcacheError, "fail, SessionCacheKey Delete")
 	}
 
 	// 세션이 저장되지 않도록

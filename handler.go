@@ -25,7 +25,5 @@ func RemoveUser(ctx *context.SessionContext) (interface{}, error) {
 	id := ctx.Session.Id
 	uc := controller.UserController{}
 	err := uc.Remove(ctx, id)
-	return define.Json{
-		"retcode": 100,
-	}, err
+	return define.Json{}, err
 }

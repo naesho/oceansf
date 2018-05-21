@@ -7,6 +7,8 @@ import (
 	"github.com/ohsean53/oceansf/define"
 	"github.com/ohsean53/oceansf/lib"
 	log "github.com/sirupsen/logrus"
+	"github.com/ohsean53/oceansf/apperr"
+	"github.com/ohsean53/oceansf/retcode"
 )
 
 // database crud object
@@ -54,7 +56,7 @@ func (u *User) Load(ctx *context.SessionContext) (err error) {
 		if cacheData != nil {
 			if err = json.Unmarshal(cacheData, &u); err != nil {
 				lib.CheckError(err)
-				return err
+				return apperr.New(retcode.JSONError, "fail, json unmarshal")
 			}
 
 			log.Debug("cache hit")
@@ -89,11 +91,10 @@ func (u *User) Load(ctx *context.SessionContext) (err error) {
 	data, err := json.Marshal(u)
 	if err != nil {
 		lib.CheckError(err)
-		return err
+		return apperr.New(retcode.JSONError, "fail, json marshal")
 	}
 
 	mc.CasDelayed(key, data, cache.EXPIRE)
-	lib.CheckError(err)
 
 	return nil
 }
@@ -112,12 +113,22 @@ func (u *User) Save(ctx *context.SessionContext) error {
 	defer stmt.Close() // danger!
 	res, err := stmt.Exec(u.Name, u.Email, u.RegisterDate, u.LastLoginDate, u.Id)
 	lib.CheckError(err)
+	if err != nil {
+		return apperr.New(retcode.DBError, "fail, update query Exec")
+	}
 
 	affectedRow, err := res.RowsAffected()
+	if err != nil {
+		return apperr.New(retcode.DBError, "fail, update query RowsAffected")
+	}
+
 	if err == nil && affectedRow == 0 && u.UID == 0 {
 		query := "INSERT INTO USER (id, name, email, register_date, last_login_date) VALUES (?,?,?,?,?)"
 		stmt, err := ctx.DB.Prepare(query)
 		lib.CheckError(err)
+		if err != nil {
+			return apperr.New(retcode.DBError, "fail, insert query Prepare")
+		}
 
 		res, err = stmt.Exec(u.Id, u.Name, u.Email, u.RegisterDate, u.LastLoginDate)
 		lib.CheckError(err)
@@ -127,6 +138,8 @@ func (u *User) Save(ctx *context.SessionContext) error {
 			if err2 == nil {
 				u.UID = NewUID
 			}
+		} else {
+			return apperr.New(retcode.DBError, "fail, insert query Exec")
 		}
 
 	}
@@ -137,7 +150,7 @@ func (u *User) Save(ctx *context.SessionContext) error {
 	data, err := json.Marshal(u)
 	if err != nil {
 		lib.CheckError(err)
-		return err
+		return apperr.New(retcode.JSONError, "fail, json marshal")
 	}
 
 	ctx.Cache.CasDelayed(key, data, cache.EXPIRE)
@@ -152,21 +165,21 @@ func (u *User) Remove(ctx *context.SessionContext) error {
 	lib.CheckError(err)
 
 	if err != nil {
-		return err
+		return apperr.New(retcode.DBError, "fail, delete query Prepare")
 	}
 
 	_, err = stmt.Exec(u.UID)
 	lib.CheckError(err)
 
 	if err != nil {
-		return err
+		return apperr.New(retcode.DBError, "fail, delete query Exec")
 	}
 
 	key := getCacheKey(u.Id)
 	err = ctx.Cache.Delete(key)
 
 	if err != nil {
-		return err
+		return apperr.New(retcode.MemcacheError, "fail, cache Delete")
 	}
 
 	return nil
